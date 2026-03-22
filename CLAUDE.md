@@ -7,7 +7,7 @@
 苍穹外卖是一个外卖平台后端服务，类似于美团或饿了么。基于 Spring Boot 构建，为管理端和用户端（微信小程序）提供服务。
 
 **技术栈：**
-- Spring Boot 2.7.3, Java 7
+- Spring Boot 2.7.3, Java 8+
 - MyBatis 2.2.0（注解 + XML 映射）
 - MySQL 数据库 + Druid 连接池
 - JWT 身份认证 (jjwt 0.9.1)
@@ -51,7 +51,7 @@ sky-take-out/
 ### 模块：sky-common
 
 共享基础设施层，包含：
-- **constant/** - 消息常量、JWT 声明、状态常量
+- **constant/** - 消息常量、JWT 声明、状态常量、密码常量、自动填充常量
 - **context/** - `BaseContext`（ThreadLocal 存储当前用户 ID）
 - **enumeration/** - 枚举类，如 `OperationType`
 - **exception/** - `BaseException` 基类 + 12 个具体异常
@@ -71,8 +71,10 @@ sky-take-out/
 ### 模块：sky-server
 
 主应用，采用分层架构：
-- **config/** - `WebMvcConfiguration`（JWT 拦截器、Swagger、静态资源）
-- **controller/admin/** - 管理端控制器（目前只有 `EmployeeController`）
+- **annotation/** - 自定义注解（`@AutoFill` 公共字段自动填充）
+- **aspect/** - 切面类（`AutoFillAspect` 公共字段自动填充逻辑）
+- **config/** - `WebMvcConfiguration`（JWT 拦截器、Swagger、静态资源）、`OssConfiguration`（阿里云 OSS）
+- **controller/admin/** - 管理端控制器（`EmployeeController`、`CategoryController`、`DishController`、`CommonController`）
 - **handler/** - `GlobalExceptionHandler`（捕获所有 `BaseException` 子类）
 - **interceptor/** - `JwtTokenAdminInterceptor`（保护 `/admin/**` 除登录外的所有接口）
 - **mapper/** - MyBatis 映射器（注解 + XML）
@@ -102,13 +104,23 @@ sky-take-out/
 - 实体类别名：`com.sky.entity`
 - 已启用驼峰命名映射：`map-underscore-to-camel-case: true`
 
+### 公共字段自动填充
+使用 AOP 切面自动填充实体的公共审计字段：
+- **注解**：`@AutoFill(OperationType.INSERT/UPDATE)` 标记需要自动填充的 Mapper 方法
+- **切面**：`AutoFillAspect` 拦截带有 `@AutoFill` 注解的方法
+- **自动填充字段**：
+  - INSERT 操作：`createTime`、`updateTime`、`createUser`、`updateUser`
+  - UPDATE 操作：`updateTime`、`updateUser`
+- **用户 ID 获取**：通过 `BaseContext.getCurrentId()` 从 ThreadLocal 获取当前登录用户 ID
+- **使用示例**：在 Mapper 方法上添加 `@AutoFill(OperationType.INSERT)` 即可启用自动填充
+
 ## 数据库配置
 
 **开发数据库**（application-dev.yml）：
 - 主机：localhost:3306
 - 数据库：sky_take_out
 - 用户名：root
-- 密码：root
+- 密码：在 `application-dev.yml` 中配置
 
 **默认管理员账号**已预置在数据库中（查看 `Employee` 表）。
 
@@ -126,7 +138,11 @@ sky-take-out/
 ## 重要实现说明
 
 ### 密码处理
-**TODO：** 密码尚未加密。`EmployeeServiceImpl:42` 有一个 TODO 注释说明需要实现 MD5 加密。在添加新员工或更新密码之前，请先实现密码哈希。
+密码使用 MD5 哈希加密：
+- 新员工默认密码：`123456`（定义在 `PasswordConstant.DEFAULT_PASSWORD`）
+- 登录时对前端传入的明文密码使用 `DigestUtils.md5DigestAsHex()` 加密后与数据库比对
+- 新增员工时密码自动加密存储
+- 查询员工信息时密码会被隐藏（替换为 `****`）
 
 ### 用户上下文
 始终使用 `BaseContext.getCurrentId()` 获取当前用户 ID，用于审计字段（createUser、updateUser）。拦截器会自动从 JWT 声明中设置此值。
@@ -134,6 +150,12 @@ sky-take-out/
 ### MyBatis 映射器选择
 - 简单查询使用注解（`@Select`、`@Insert` 等）
 - 复杂查询或动态 SQL 使用 XML 映射器
+
+### 分页查询
+使用 PageHelper 实现分页：
+- 在 Service 方法中调用 `PageHelper.startPage(page, pageSize)` 开启分页
+- Mapper 方法返回 `Page<T>` 类型
+- 从 `Page` 对象获取 `total` 和 `records` 构造 `PageResult<T>` 返回
 
 ### 日志级别
 Mapper 查询记录在 DEBUG 级别，Service 为 INFO，Controller 为 INFO。可在 `application.yml` 的 `logging.level` 中调整。

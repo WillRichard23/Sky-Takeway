@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(find:*)",
-      "Bash(git remote:*)"
+      "Bash(git remote:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(GIT_SEQUENCE_EDITOR=\"sed -i 's/^pick d416e3c/edit d416e3c/'\" git rebase -i d416e3c~1)",
+      "Bash(git stash:*)"
     ]
   }
 }
